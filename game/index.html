@@ -130,7 +130,7 @@
   <h1>BRÜCKEN&shy;STURM</h1>
   <div class="coinchip" id="coinsStart">🪙 0</div>
   <p>Wisch nach links und rechts, sammle Tore und stoppe die rote Flut, bevor sie deine Truppe überrennt!</p>
-  <div class="legend"><span class="tag b">+1</span><span class="tag g">+23</span><span class="tag v">×2</span><span class="tag r">−10</span></div>
+  <div class="legend"><span class="tag b" id="legBlue">+1</span><span class="tag g">+23</span><span class="tag v">×2</span><span class="tag r">−10</span></div>
   <button id="btnStart" class="btn gold">SPIELEN</button>
   <button id="btnShop" class="btn ghost">🛒 Shop</button>
   <p class="hint" id="startHint"></p>
@@ -251,8 +251,8 @@ function theme(){ return THEMES[Math.max(0, G.themeIdx|0) % 3]; }
 /* ---------- Hintergrund (Stadt-Diorama + Hängebrücke), einmal pro Thema/Resize ---------- */
 function prerenderBg(){
   const T = theme();
-  bgCanvas = document.createElement('canvas');
-  bgCanvas.width = Math.round(W*DPR); bgCanvas.height = Math.round(H*DPR);
+  if (!bgCanvas) bgCanvas = document.createElement('canvas');
+  bgCanvas.width = Math.round(W*DPR); bgCanvas.height = Math.round(H*DPR);   // setzt Größe & leert
   const b = bgCanvas.getContext('2d');
   b.setTransform(DPR,0,0,DPR,0,0);
   const sky = b.createLinearGradient(0,0,0,HORIZON*1.4);
@@ -384,7 +384,7 @@ const store = {
 const G = {
   state:'menu',            // menu | shop | play | win | lose | pause
   level:1, best:1,
-  coins:0, upgS:0, upgF:0, reviveUsed:false,
+  coins:0, upgS:0, upgF:0, reviveUsed:false, runCoins:0, winSquad:0,
   squad:0, squadFrac:0, squadX:0,
   horde:0, hordeMax:1, hordeZ:14,
   gates:[], bullets:[], runners:[], parts:[], floats:[],
@@ -438,7 +438,7 @@ function levelCfg(l){
 function startLevel(){
   const c = G.cfg = levelCfg(G.level);
   G.squad = c.startSquad + G.upgS*3; G.squadFrac = 0; G.squadX = 0;
-  G.reviveUsed = false;
+  G.reviveUsed = false; G.runCoins = 0;   // Boss-Prämien verfallen bei Neustart
   G.horde = c.horde; G.hordeMax = c.horde; G.hordeZ = 13.5;
   G.gates.length=0; G.bullets.length=0; G.runners.length=0;
   G.parts.length=0; G.floats.length=0;
@@ -472,6 +472,7 @@ const upgSPrice = ()=>Math.round(50*Math.pow(1.6,G.upgS));
 const upgFPrice = ()=>Math.round(60*Math.pow(1.7,G.upgF));
 function refreshMeta(){
   el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Schieß den gelben Bus ab — erst dann rollen die goldenen +23-Tore an!';
+  el('legBlue').textContent = '+'+levelCfg(G.level).blueVal;
   el('coinsStart').textContent = '🪙 '+G.coins;
   el('coinsShop').textContent  = '🪙 '+G.coins;
   el('upgSLvl').textContent = 'Stufe '+G.upgS+' · Start: '+(8+G.upgS*3);
@@ -555,8 +556,15 @@ document.addEventListener('visibilitychange', ()=>{
   if (document.hidden){ if (G.state==='play') setState('pause'); }
   else AudioFX.unlock();   // nach Rückkehr ggf. 'interrupted'-Kontext wecken
 });
-window.addEventListener('resize', resize);
-if (window.visualViewport) visualViewport.addEventListener('resize', resize);
+// Resize-Aufrufe pro Frame bündeln (Rotation feuert beide Listener)
+let resizePending = false;
+function requestResize(){
+  if (resizePending) return;
+  resizePending = true;
+  requestAnimationFrame(()=>{ resizePending = false; resize(); });
+}
+window.addEventListener('resize', requestResize);
+if (window.visualViewport) visualViewport.addEventListener('resize', requestResize);
 
 /* ---------- Formation (Phyllotaxis) ---------- */
 const GA = Math.PI*(3-Math.sqrt(5));
@@ -623,6 +631,14 @@ function damageHorde(d){
   if (killed>0) burst((Math.random()*1.4-0.7), G.hordeZ, Math.min(killed,4), '#e05545', 1);
   maybeSpawnBoss();
 }
+function bossKilled(B){
+  // Prämie am Kill-Ort ins Lauf-Konto — gutgeschrieben erst beim Sieg
+  if (B.paid) return;
+  B.paid = true;
+  G.runCoins += 5;
+  floatText(B.x, B.z, '+5 🪙', '#ffd23e');
+}
+
 function destroyVan(){
   if (G.vanDead) return;
   G.vanDead = true;
@@ -745,7 +761,7 @@ function update(dt){
       if (B2 && !B2.dying && Math.abs(s.x-B2.x)<0.45){
         B2.hp -= 12+3*G.level; B2.flash = 0.08; hz = B2.z;
         if (B2.hp<=0){
-          B2.dying = 0.001; G.slowmo = 0.7;
+          B2.dying = 0.001; G.slowmo = 0.7; bossKilled(B2);
           burst(B2.x,B2.z,26,'#ffd23e',2.4,3);
           AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
         }
@@ -834,10 +850,6 @@ function update(dt){
   const B = G.boss;
   if (B){
     if (B.dying>0){
-      if (B.dying===0.001){   // Kill-Prämie einmalig beim Todesbeginn
-        G.coins += 5; store.set('coins',G.coins);
-        floatText(B.x, B.z, '+5 🪙', '#ffd23e');
-      }
       B.dying += dt;
       if (B.dying>1.1){ G.boss=null; maybeSpawnBoss(); }
     } else {
@@ -891,7 +903,7 @@ function update(dt){
   /* --- Salven & Kugeln --- */
   if (G.muzzleT>0) G.muzzleT -= dt;
   const hasTarget = G.horde>0 || G.runners.length>0 || (B && !B.dying);
-  if (G.squad>0 && hasTarget && G.state==='play'){
+  if (G.squad>0 && hasTarget && G.state==='play' && G.endTimer===0){
     G.fireT -= dt;
     if (G.fireT<=0){
       G.fireT += 1/c.volleyRate;
@@ -933,7 +945,7 @@ function update(dt){
       B.hp -= b.dmg; hit=true; B.flash = 0.08;
       burst(B.x+(Math.random()*0.3-0.15), B.z, 1, '#ef8070', 0.8);
       if (B.hp<=0){
-        B.dying = 0.001; G.slowmo = 0.7;   // Zeitlupen-Moment
+        B.dying = 0.001; G.slowmo = 0.7; bossKilled(B);   // Zeitlupen-Moment
         burst(B.x,B.z,26,'#ffd23e',2.4,3);
         AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
       }
@@ -978,6 +990,8 @@ function update(dt){
   if (G.horde<=0 && !G.boss && G.runners.every(r=>r.gold) && G.state==='play'){
     if (G.endTimer===0){
       G.cheer = true;
+      G.winSquad = G.squad;       // Belohnung beim Jubelstart einfrieren
+      G.bullets.length = 0;
       AudioFX.win();
       const conf = ['#ffd23e','#5a8bff','#ef5350','#7ce87c','#c9a4ff'];
       for (let i=0;i<10;i++)
@@ -986,13 +1000,13 @@ function update(dt){
     G.endTimer += dt;
     if (G.endTimer>1.5){
       const done = G.level;
-      const reward = 10 + 2*done + Math.floor(G.squad/10);
-      G.coins += reward;
+      const reward = 10 + 2*done + Math.floor(G.winSquad/10) + G.runCoins;
+      G.coins += reward; G.runCoins = 0;
       // Fortschritt sofort sichern — nicht erst beim WEITER-Klick
       G.level = done+1; G.best = Math.max(G.best, G.level);
       store.set('coins',G.coins); store.set('level',G.level); store.set('best',G.best);
       el('coinsWin').textContent = '+'+reward+' 🪙';
-      el('winText').textContent = 'Level '+done+' geschafft — '+G.squad+' Soldaten übrig!';
+      el('winText').textContent = 'Level '+done+' geschafft — '+G.winSquad+' Soldaten übrig!';
       setState('win');
     }
   }
