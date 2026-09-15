@@ -8,7 +8,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Brückensturm">
 <meta name="theme-color" content="#0e1b2a">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap"></noscript>
 <!-- ARTIFACT-START -->
 <title>Brückensturm</title>
 <style>
@@ -36,7 +39,8 @@
     position:fixed; top:calc(10px + env(safe-area-inset-top,0px)); z-index:5;
     width:44px; height:44px; border-radius:14px; border:0;
     background:var(--navy-70); color:var(--ink); font-size:20px; line-height:44px;
-    text-align:center; padding:0; backdrop-filter:blur(6px);
+    text-align:center; padding:0;
+    -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
   }
   .hud-btn:active{transform:scale(.92);}
   #btnMute{left:calc(12px + env(safe-area-inset-left,0px));}
@@ -46,7 +50,8 @@
     transform:translateX(-50%); z-index:5;
     font-family:var(--disp); font-size:17px; letter-spacing:.06em;
     background:var(--navy-70); padding:8px 18px; border-radius:999px;
-    backdrop-filter:blur(6px); font-variant-numeric:tabular-nums;
+    -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    font-variant-numeric:tabular-nums;
   }
 
   /* ---------- Overlays ---------- */
@@ -57,7 +62,7 @@
     padding-top:calc(24px + env(safe-area-inset-top,0px));
     padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
     background:radial-gradient(120% 90% at 50% 20%, rgba(20,38,60,.88), rgba(9,16,26,.94));
-    backdrop-filter:blur(4px);
+    -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
   }
   [hidden]{display:none!important;}
   .screen h1{
@@ -134,6 +139,7 @@
    ================================================================ */
 const cv  = document.getElementById('game');
 const ctx = cv.getContext('2d');
+let needsDraw = true;   // Overlays: Szene nur bei Änderung neu zeichnen
 
 /* ---------- Layout / Projektion ---------- */
 let W=0, H=0, DPR=1, CX=0, RH=0, HORIZON=0, Y0=0;
@@ -147,6 +153,7 @@ function resize(){
   cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  needsDraw = true;
   CX = W/2;
   RH = Math.min(W*0.44, H*0.34);          // halbe Straßenbreite in px bei z=0
   HORIZON = H*0.285; Y0 = H*0.90;
@@ -203,7 +210,7 @@ function prerenderBg(){
 
 /* ---------- Audio (WebAudio-Synth, iOS-Unlock beim ersten Tap) ---------- */
 const AudioFX = (()=>{
-  let ac=null, master=null, muted=false, lastShot=0;
+  let ac=null, master=null, muted=false, lastShot=0, lastSplat=0;
   function ensure(){
     if (!ac){
       try{
@@ -211,7 +218,8 @@ const AudioFX = (()=>{
         master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination);
       }catch(e){ return false; }
     }
-    if (ac.state==='suspended') ac.resume();
+    // iOS meldet nach Anruf/Sperre auch 'interrupted' — alles außer 'running' wecken
+    if (ac.state!=='running'){ try{ ac.resume(); }catch(e){} }
     return !!ac;
   }
   function env(g,t0,a,d,peak){
@@ -241,10 +249,10 @@ const AudioFX = (()=>{
     unlock(){ ensure(); },
     setMuted(m){ muted=m; },
     get muted(){ return muted; },
-    shot(now){ if (now-lastShot>0.09){ lastShot=now; tone(1500,0.04,'square',0.045,700);} },
+    shot(){ const t=ac?ac.currentTime:0; if (t-lastShot>0.09){ lastShot=t; tone(1500,0.04,'square',0.045,700);} },
     gate(){ tone(660,0.09,'triangle',0.22,990); tone(990,0.12,'triangle',0.16); },
     bigGate(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.14,'triangle',0.22),i*70)); },
-    splat(){ noise(0.08,0.18,700); },
+    splat(){ const t=ac?ac.currentTime:0; if (t-lastSplat<0.12) return; lastSplat=t; noise(0.08,0.18,700); },
     roar(){ tone(160,0.6,'sawtooth',0.3,55); noise(0.5,0.2,300); },
     stomp(){ tone(70,0.25,'sine',0.5,38); noise(0.15,0.3,220); },
     bossDie(){ noise(0.4,0.35,500); tone(90,0.5,'sawtooth',0.3,40); },
@@ -318,16 +326,18 @@ const el = id => document.getElementById(id);
 const screens = { menu:el('scrStart'), win:el('scrWin'), lose:el('scrLose'), pause:el('scrPause') };
 function setState(s){
   G.state = s;
+  if (s!=='play') dragId=null;   // kein Geister-Drag nach Pause/Overlay
+  needsDraw = true;
   for (const k in screens) screens[k].hidden = (k!==s);
   const inGame = (s==='play'||s==='pause');
   el('btnMute').hidden = el('btnPause').hidden = el('levelChip').hidden = !inGame;
   el('levelChip').textContent = 'LEVEL '+G.level;
 }
 el('btnStart').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
-el('btnNext').addEventListener('click', ()=>{ G.level++; G.best=Math.max(G.best,G.level); store.set('level',G.level); store.set('best',G.best); startLevel(); });
-el('btnRetry').addEventListener('click', startLevel);
-el('btnResume').addEventListener('click', ()=>{ if (G.state==='pause') setState('play'); });
-el('btnRestart').addEventListener('click', startLevel);
+el('btnNext').addEventListener('click', ()=>{ AudioFX.unlock(); G.level++; G.best=Math.max(G.best,G.level); store.set('level',G.level); store.set('best',G.best); startLevel(); });
+el('btnRetry').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
+el('btnResume').addEventListener('click', ()=>{ AudioFX.unlock(); if (G.state==='pause') setState('play'); });
+el('btnRestart').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
 el('btnPause').addEventListener('click', ()=>{ if (G.state==='play'){ setState('pause'); } });
 el('btnMute').addEventListener('click', ()=>{
   AudioFX.setMuted(!AudioFX.muted); store.set('mute',AudioFX.muted);
@@ -338,7 +348,10 @@ el('btnMute').addEventListener('click', ()=>{
 let dragId=null, dragX=0;
 cv.addEventListener('pointerdown', e=>{
   AudioFX.unlock();
-  if (dragId!==null) return;
+  // Neuester Finger übernimmt immer (Daumenwechsel-Griff auf dem iPhone)
+  if (dragId!==null && dragId!==e.pointerId){
+    try{ cv.releasePointerCapture(dragId); }catch(_){}
+  }
   dragId=e.pointerId; dragX=e.clientX;
   try{ cv.setPointerCapture(e.pointerId); }catch(_){}
 });
@@ -353,7 +366,10 @@ cv.addEventListener('pointercancel', endDrag);
 document.addEventListener('contextmenu', e=>e.preventDefault());
 document.addEventListener('touchmove', e=>e.preventDefault(), {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
-document.addEventListener('visibilitychange', ()=>{ if (document.hidden && G.state==='play') setState('pause'); });
+document.addEventListener('visibilitychange', ()=>{
+  if (document.hidden){ if (G.state==='play') setState('pause'); }
+  else AudioFX.unlock();   // nach Rückkehr ggf. 'interrupted'-Kontext wecken
+});
 window.addEventListener('resize', resize);
 if (window.visualViewport) visualViewport.addEventListener('resize', resize);
 
@@ -405,7 +421,7 @@ function maybeSpawnBoss(){
   if (Math.ceil(G.horde) <= G.bossQueue[0]){
     G.bossQueue.shift();
     const hp = G.cfg.bossHP;
-    G.boss = { x:(Math.random()*0.5-0.25), z:G.hordeZ-0.8, hp, hpMax:hp, stompT:0.9, dying:0 };
+    G.boss = { x:(Math.random()*0.5-0.25), z:Math.max(2.4, G.hordeZ-0.8), hp, hpMax:hp, stompT:0.9, dying:0 };
     AudioFX.roar(); G.shake = Math.max(G.shake, 8);
   }
 }
@@ -452,7 +468,7 @@ function update(dt){
       G.hordeZ = Math.max(G.hordeZ, -0.2);
       G.squadFrac += (30+4*G.level)*dt;
       const n = Math.floor(G.squadFrac);
-      if (n>0){ G.squadFrac-=n; killSquad(n); G.horde=Math.max(1,G.horde-n*0.5); }
+      if (n>0){ G.squadFrac-=n; killSquad(n); G.horde=Math.max(0,G.horde-n*0.5); maybeSpawnBoss(); }
     }
   }
 
@@ -515,24 +531,25 @@ function update(dt){
         const off = formOffset((Math.random()*Math.min(G.squad,60))|0);
         G.bullets.push({ x:G.squadX+off.x, z:0.3+off.z*0.3, dmg:dmg/k, v:13 });
       }
-      AudioFX.shot(G.time);
+      AudioFX.shot();
     }
   }
   for (let i=G.bullets.length-1;i>=0;i--){
     const b = G.bullets[i];
+    const z0 = b.z;               // Segment-Test: nur Gegner im überflogenen Fenster
     b.z += b.v*dt;
     let hit = false;
     // 1. Läufer
     for (let j=G.runners.length-1;j>=0;j--){
       const r=G.runners[j];
-      if (b.z>=r.z-0.15 && Math.abs(b.x-r.x)<0.09){
+      if (r.z>=z0-0.15 && r.z<=b.z+0.15 && Math.abs(b.x-r.x)<0.09){
         r.hp -= b.dmg; hit=true;
         if (r.hp<=0){ G.runners.splice(j,1); burst(r.x,r.z,6,'#e05545',1.2); }
         break;
       }
     }
     // 2. Boss
-    if (!hit && B && !B.dying && b.z>=B.z-0.2 && Math.abs(b.x-B.x)<0.3){
+    if (!hit && B && !B.dying && B.z>=z0-0.2 && B.z<=b.z+0.2 && Math.abs(b.x-B.x)<0.3){
       B.hp -= b.dmg; hit=true;
       burst(B.x+(Math.random()*0.3-0.15), B.z, 1, '#ef8070', 0.8);
       if (B.hp<=0){
@@ -665,7 +682,7 @@ function drawHorde(){
   }
   // Vordere Reihen als einzelne Figuren
   const cols=['#d43a3a','#c22a2a','#e05545'];
-  for (let r=0;r<detail;r++){
+  for (let r=detail-1;r>=0;r--){   // hinten zuerst, nahe Reihen zuletzt
     const z = G.hordeZ + r*rowStep;
     if (z>ZFAR||z<-0.3) continue;
     const nDots = 20+ (r%3);
@@ -865,8 +882,9 @@ let last = performance.now();
 function frame(now){
   const dt = Math.min((now-last)/1000, 0.05);
   last = now;
-  if (G.state==='play') update(dt);
-  draw();
+  if (G.state==='play'){ update(dt); needsDraw = true; }
+  else if (G.shake>0){ G.shake = Math.max(0, G.shake - dt*30); needsDraw = true; }
+  if (needsDraw){ draw(); needsDraw = (G.state==='play'); }
   requestAnimationFrame(frame);
 }
 
