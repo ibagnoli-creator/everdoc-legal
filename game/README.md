@@ -17,7 +17,16 @@ der Boss) die Truppe überrennt.
 
 - **Ziehen (links/rechts):** Truppe steuern
 - Durch blaue **+1**-Tore laufen → 1 Soldat mehr, gelbe **+99**-Tore → 99 mehr
+- Violette **×2**-Tore verdoppeln die Truppe (bis +120), rote **−10**-Tore meiden!
+- **Bomben-Pickups** rufen einen Luftschlag: ein Flugzeug bombardiert die Horde
+- Der **goldene Läufer** quert gelegentlich die Brücke — abschießen bringt +20
+- Der **Boss wirft Felsbrocken** (rote Zielmarkierung) — ausweichen!
 - Geschossen wird automatisch
+
+## Level-Themen
+
+Die Optik wechselt pro Level durch: Tag → Abendrot → Nacht (beleuchtete
+Stadt, Sterne, Van-Scheinwerfer).
 
 ## Technik
 
