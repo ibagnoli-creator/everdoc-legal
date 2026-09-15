@@ -162,6 +162,7 @@
   <div class="coinchip" id="coinsWin">+0 🪙</div>
   <p id="winText">Level 1 geschafft — die Brücke ist frei.</p>
   <button id="btnNext" class="btn gold">WEITER ▶</button>
+  <button id="btnMenuWin" class="btn ghost">🏠 Menü &amp; Shop</button>
 </div>
 
 <div id="scrLose" class="screen" hidden>
@@ -169,12 +170,14 @@
   <p id="loseText">Die Horde hat dich überrannt.</p>
   <button id="btnRevive" class="btn gold">WEITERSPIELEN ▶</button>
   <button id="btnRetry" class="btn">NOCHMAL</button>
+  <button id="btnMenuLose" class="btn ghost">🏠 Menü &amp; Shop</button>
 </div>
 
 <div id="scrPause" class="screen" hidden>
   <h1>PAUSE</h1>
   <button id="btnResume" class="btn gold">WEITER</button>
   <button id="btnRestart" class="btn ghost">Level neu starten</button>
+  <button id="btnMenuPause" class="btn ghost">🏠 Menü &amp; Shop</button>
 </div>
 
 <script>
@@ -468,6 +471,7 @@ const screens = { menu:el('scrStart'), shop:el('scrShop'), win:el('scrWin'), los
 const upgSPrice = ()=>Math.round(50*Math.pow(1.6,G.upgS));
 const upgFPrice = ()=>Math.round(60*Math.pow(1.7,G.upgF));
 function refreshMeta(){
+  el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Schieß den gelben Bus ab — erst dann rollen die goldenen +23-Tore an!';
   el('coinsStart').textContent = '🪙 '+G.coins;
   el('coinsShop').textContent  = '🪙 '+G.coins;
   el('upgSLvl').textContent = 'Stufe '+G.upgS+' · Start: '+(8+G.upgS*3);
@@ -489,7 +493,9 @@ function setState(s){
   if (s==='menu'||s==='shop') refreshMeta();
 }
 el('btnStart').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
-el('btnNext').addEventListener('click', ()=>{ AudioFX.unlock(); G.level++; G.best=Math.max(G.best,G.level); store.set('level',G.level); store.set('best',G.best); startLevel(); });
+el('btnNext').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });   // Level wurde beim Sieg schon hochgezählt
+for (const id of ['btnMenuWin','btnMenuLose','btnMenuPause'])
+  el(id).addEventListener('click', ()=>setState('menu'));
 el('btnRetry').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
 el('btnResume').addEventListener('click', ()=>{ AudioFX.unlock(); if (G.state==='pause') setState('play'); });
 el('btnRestart').addEventListener('click', ()=>{ AudioFX.unlock(); startLevel(); });
@@ -979,10 +985,14 @@ function update(dt){
     }
     G.endTimer += dt;
     if (G.endTimer>1.5){
-      const reward = 10 + 2*G.level + Math.floor(G.squad/10);
-      G.coins += reward; store.set('coins',G.coins);
+      const done = G.level;
+      const reward = 10 + 2*done + Math.floor(G.squad/10);
+      G.coins += reward;
+      // Fortschritt sofort sichern — nicht erst beim WEITER-Klick
+      G.level = done+1; G.best = Math.max(G.best, G.level);
+      store.set('coins',G.coins); store.set('level',G.level); store.set('best',G.best);
       el('coinsWin').textContent = '+'+reward+' 🪙';
-      el('winText').textContent = 'Level '+G.level+' geschafft — '+G.squad+' Soldaten übrig!';
+      el('winText').textContent = 'Level '+done+' geschafft — '+G.squad+' Soldaten übrig!';
       setState('win');
     }
   }
