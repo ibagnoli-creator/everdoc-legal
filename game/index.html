@@ -481,7 +481,7 @@ function killSquad(n){
   const p = proj(G.squadX,0.2);
   burst(G.squadX,0.2,Math.min(n*2,18),'#5a8bff',1.2);
   AudioFX.splat();
-  if (G.squad<=0 && G.state==='play'){
+  if (G.squad<=0 && G.state==='play' && G.endTimer===0){
     G.shake=Math.max(G.shake,14); AudioFX.lose();
     el('loseText').textContent = 'Die Horde hat dich überrannt. Noch '+Math.max(0,Math.ceil(G.horde))+' Gegner übrig.';
     setState('lose');
@@ -539,7 +539,7 @@ function update(dt){
     const g = G.gates[i];
     g.z -= c.scroll*dt;
     if (g.flash>0) g.flash -= dt*3;
-    if (!g.taken && g.z<0.35 && g.z>-0.35){
+    if (!g.taken && G.endTimer===0 && g.z<0.35 && g.z>-0.35){
       const gl=g.x-g.w/2, gr=g.x+g.w/2;
       if (G.squadX+fr*0.85>gl && G.squadX-fr*0.85<gr){
         g.taken=true; g.flash=1;
@@ -574,7 +574,7 @@ function update(dt){
   for (let i=G.pickups.length-1;i>=0;i--){
     const pk = G.pickups[i];
     pk.z -= c.scroll*dt;
-    if (pk.z<0.35 && pk.z>-0.35 && Math.abs(G.squadX-pk.x)<fr*0.85+0.15){
+    if (G.endTimer===0 && pk.z<0.35 && pk.z>-0.35 && Math.abs(G.squadX-pk.x)<fr*0.85+0.15){
       G.pickups.splice(i,1);
       G.planeT = 1;
       for (let s=0;s<5;s++) G.airQueue.push({d:0.9+s*0.16, x:-0.7+s*0.35});
@@ -588,8 +588,18 @@ function update(dt){
     s.d -= dt;
     if (s.d<=0){
       G.airQueue.splice(i,1);
-      const hz = Math.max(1.5, G.hordeZ+0.3);
+      let hz = Math.max(1.5, G.hordeZ+0.3);
       if (G.horde>0) damageHorde(12+3*G.level);
+      // Luftschlag trifft auch den Boss, wenn er in der Nähe einschlägt
+      const B2 = G.boss;
+      if (B2 && !B2.dying && Math.abs(s.x-B2.x)<0.45){
+        B2.hp -= 12+3*G.level; B2.flash = 0.08; hz = B2.z;
+        if (B2.hp<=0){
+          B2.dying = 0.001;
+          burst(B2.x,B2.z,26,'#ffd23e',2.4,3);
+          AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
+        }
+      }
       burst(s.x, hz, 22, '#ff9c3d', 3, 3.5, 7);
       burst(s.x, hz, 12, '#6b5a48', 2, 2.5, 5);
       G.shake = Math.max(G.shake, 9);
@@ -612,9 +622,13 @@ function update(dt){
   G.goldT -= dt;
   if (G.goldT<=0){
     if (G.horde>0){
-      const dir = Math.random()<0.5 ? 1 : -1;
-      G.runners.push({ gold:true, x:-dir*1.15, dir, z:3.2+Math.random()*3,
-                       hp:4+2*G.level, speed:0.85, ph:Math.random()*6.28 });
+      // immer vor der Horde spawnen, sonst unerreichbar
+      const gz = Math.min(3.2+Math.random()*3, G.hordeZ-0.8);
+      if (gz>1.2){
+        const dir = Math.random()<0.5 ? 1 : -1;
+        G.runners.push({ gold:true, x:-dir*1.15, dir, z:gz,
+                         hp:4+2*G.level, speed:0.85, ph:Math.random()*6.28 });
+      }
     }
     G.goldT = c.goldEvery*(0.8+Math.random()*0.6);
   }
@@ -690,7 +704,7 @@ function update(dt){
       burst(r.tx, 0.32, 14, '#8d8578', 2.2, 2.5, 5);
       G.shake = Math.max(G.shake, 8);
       AudioFX.stomp();
-      if (Math.abs(r.tx-G.squadX) < formRadius(G.squad)+0.12){
+      if (G.endTimer===0 && Math.abs(r.tx-G.squadX) < formRadius(G.squad)+0.12){
         killSquad(4 + Math.ceil(G.squad*0.08));
       }
     }
@@ -765,7 +779,7 @@ function update(dt){
   }
 
   /* --- Sieg: erst Jubel + Konfetti, dann Overlay --- */
-  if (G.horde<=0 && !G.boss && G.runners.length===0 && G.state==='play'){
+  if (G.horde<=0 && !G.boss && G.runners.every(r=>r.gold) && G.state==='play'){
     if (G.endTimer===0){
       G.cheer = true;
       AudioFX.win();
@@ -865,8 +879,8 @@ function drawGate(g){
   ctx.globalAlpha=1;
 }
 
-function drawPickups(){
-  for (const pk of G.pickups){
+function drawPickups(list){
+  for (const pk of list){
     const p = proj(pk.x, pk.z);
     if (p.s<=0.07) continue;
     const w = 0.2*RH*p.s;
@@ -1189,12 +1203,15 @@ function draw(){
   const far=[], near=[];
   for (const g of G.gates) (g.z>=G.hordeZ && G.horde>0 ? far : near).push(g);
   far.sort((a,b)=>b.z-a.z); near.sort((a,b)=>b.z-a.z);
+  const pkFar=[], pkNear=[];
+  for (const pk of G.pickups) (pk.z>=G.hordeZ && G.horde>0 ? pkFar : pkNear).push(pk);
   for (const g of far) drawGate(g);
+  drawPickups(pkFar);
   drawHorde();
   drawVan();
   drawBoss();
   for (const g of near) drawGate(g);
-  drawPickups();
+  drawPickups(pkNear);
   drawRockMarkers();
   for (const r of G.runners) drawRunner(r);
   drawBullets();
