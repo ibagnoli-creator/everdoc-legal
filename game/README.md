@@ -23,6 +23,15 @@ der Boss) die Truppe überrennt.
 - Der **Boss wirft Felsbrocken** (rote Zielmarkierung) — ausweichen!
 - Geschossen wird automatisch
 
+## Dramatik
+
+- **WELLE!** — die Horde sprintet alle paar Sekunden mit Vollgas vor
+- **LETZTE WELLE!** — bei 18 % Restgegnern stürmt der Rest dauerhaft
+- **BOSS RASTET AUS!** — unter 33 % HP wird der Boss schneller und wirft öfter
+- Elite-Läufer (ab Level 3) sind gepanzert und zäh
+- Zeitlupe beim Boss-Kill, Herzschlag und rote Bildschirmränder, wenn die
+  Truppe fast aufgerieben ist
+
 ## Level-Themen
 
 Die Optik wechselt pro Level durch: Tag → Abendrot → Nacht (beleuchtete

@@ -317,6 +317,8 @@ const AudioFX = (()=>{
     bossDie(){ noise(0.4,0.35,500); tone(90,0.5,'sawtooth',0.3,40); },
     boom(){ noise(0.55,0.5,320); tone(55,0.5,'sine',0.4,30); },
     whoosh(){ noise(0.35,0.12,1600); },
+    horn(){ tone(233,0.4,'square',0.22,220); tone(311,0.4,'square',0.18,290); },
+    heart(){ tone(55,0.09,'sine',0.32,45); setTimeout(()=>tone(50,0.12,'sine',0.28,40),120); },
     coin(){ tone(1318,0.09,'triangle',0.2,1568); tone(1760,0.14,'triangle',0.16); },
     buzz(){ tone(120,0.25,'sawtooth',0.28,70); },
     win(){ [523,659,784,1046,1318].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'triangle',0.25),i*110)); },
@@ -343,6 +345,7 @@ const G = {
   fireT:0, leftT:0, rightT:0, rightPending:0, runnerT:0,
   x2T:Infinity, airSpawnT:0, goldT:0, lastLeftMinus:false,
   cheer:false, themeIdx:-1,
+  surgeT:0, surgeLeft:0, rushed:false, banner:null, slowmo:0, heartT:0,
   cfg:null
 };
 window.__bs = G;   // Test-/Debug-Zugriff (step/startLevel werden unten angehängt)
@@ -355,20 +358,25 @@ function levelCfg(l){
     scroll: 3.1 + Math.min(l*0.08, 0.8),
     unitDPS: 0.55,
     volleyRate: 7,
-    advance: Math.min(0.20 + 0.035*l, 0.55),
-    pushPerKill: 0.0042,
+    advance: Math.min(0.21 + 0.04*l, 0.58),
+    pushPerKill: 0.0039,
     gateSpacing: 1.05,
     rightEvery: 11 + l,
     rightLen: 2,
     runnerEvery: Math.max(2.0, 3.4-l*0.2),
     runnerSize: 3+Math.min(l,5),
     runnerHP: 2 + l*0.45,
+    eliteChance: l>=3 ? Math.min(0.15+0.05*l, 0.45) : 0,
     bossSpeed: Math.min(0.85 + 0.04*l, 1.3),
-    bossHP: Math.round(150*Math.pow(1.42,l-1)),
+    bossHP: Math.round(150*Math.pow(1.45,l-1)),
     bossStomp: 5+2*l,
     bossAt: l>=3 ? [0.62,0.30] : [0.5],
-    throwEvery: Math.max(1.7, 2.9-0.15*l),
-    minusChance: l>=2 ? Math.min(0.08+0.015*l, 0.16) : 0,
+    throwEvery: Math.max(1.5, 2.6-0.15*l),
+    surgeEvery: Math.max(9, 16-l*0.5),
+    surgeDur: 1.4,
+    surgeMul: Math.min(2.2+0.25*l, 3.4),
+    rushFrac: 0.18,
+    minusChance: l>=2 ? Math.min(0.06+0.018*l, 0.20) : 0,
     x2Every: l>=2 ? 24 : 0,
     airEvery: 17,
     goldEvery: 12
@@ -389,6 +397,8 @@ function startLevel(){
   G.x2T = c.x2Every ? c.x2Every*0.6+Math.random()*6 : Infinity;
   G.airSpawnT = 9+Math.random()*6;
   G.goldT = 8+Math.random()*6;
+  G.surgeT = Math.max(8, c.surgeEvery*(0.7+Math.random()*0.5));
+  G.surgeLeft = 0; G.rushed = false; G.banner = null; G.slowmo = 0; G.heartT = 0;
   const ti = (G.level-1)%3;
   if (ti!==G.themeIdx){ G.themeIdx=ti; prerenderBg(); }
   // Startstrecke mit +1-Toren vorbelegen
@@ -474,6 +484,28 @@ function burst(x,z,n,col,spd,up,sz){
   }
 }
 function floatText(x,z,txt,col){ G.floats.push({x,z,txt,col,t:0}); }
+function showBanner(txt,col){ G.banner = {txt, col, t:0, dur:1.6}; }
+function spawnRunners(forceElite){
+  const c = G.cfg;
+  // Druckventil: nie mehr als ~10 Läufer gleichzeitig auf der Brücke
+  if (G.runners.reduce((n,r)=>n+(r.gold?0:1),0) >= 10) return;
+  // Eliten erst, wenn schon eine Armee steht — dramatisch, aber fair
+  const elite = forceElite || (G.squad>=40 && Math.random()<c.eliteChance);
+  const n = c.runnerSize + (Math.random()*3|0);
+  const bx = Math.random()*1.2-0.6;
+  // volle Panzerung erst gegen stehende Armeen — verhindert frühe Auslöschung
+  const hpBase = G.squad<40 ? Math.min(c.runnerHP, 3) : c.runnerHP;
+  for (let i=0;i<n;i++){
+    G.runners.push({
+      x: bx+(Math.random()*0.24-0.12),
+      z: G.hordeZ+Math.random()*0.5,
+      hp: elite ? hpBase*3 : hpBase,
+      speed: (1.25+Math.random()*0.45)*(elite?0.75:1),
+      ph: Math.random()*6.28, elite
+    });
+  }
+  G.horde = Math.max(1, G.horde - n*0.25);   // Trupps zählen halb, Rest bleibt im Pulk
+}
 
 /* ---------- Update ---------- */
 function killSquad(n){
@@ -595,7 +627,7 @@ function update(dt){
       if (B2 && !B2.dying && Math.abs(s.x-B2.x)<0.45){
         B2.hp -= 12+3*G.level; B2.flash = 0.08; hz = B2.z;
         if (B2.hp<=0){
-          B2.dying = 0.001;
+          B2.dying = 0.001; G.slowmo = 0.7;
           burst(B2.x,B2.z,26,'#ffd23e',2.4,3);
           AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
         }
@@ -607,9 +639,32 @@ function update(dt){
     }
   }
 
+  /* --- Wellen: die Horde sprintet kurz mit Vollgas --- */
+  if (G.horde>0 && G.endTimer===0){
+    if (G.surgeLeft>0) G.surgeLeft -= dt;
+    else {
+      G.surgeT -= dt;
+      if (G.surgeT<=0 && G.hordeZ>3.5){
+        G.surgeLeft = c.surgeDur;
+        G.surgeT = c.surgeEvery*(0.8+Math.random()*0.5);
+        showBanner('WELLE!', '#ef5350');
+        AudioFX.roar();
+        if (G.level>=2) spawnRunners(false);   // Level 1: nur Tempo, kein Zusatztrupp
+      }
+    }
+    // Letzte Welle: der Rest der Horde stürmt dauerhaft
+    if (!G.rushed && G.horde <= G.hordeMax*c.rushFrac){
+      G.rushed = true;
+      showBanner('LETZTE WELLE!', '#ffd23e');
+      AudioFX.horn();
+      spawnRunners(false);
+    }
+  }
+
   /* --- Horde rückt vor --- */
   if (G.horde>0){
-    G.hordeZ -= c.advance*dt;
+    const adv = c.advance * (G.surgeLeft>0 ? c.surgeMul : 1) * (G.rushed ? 1.6 : 1);
+    G.hordeZ -= adv*dt;
     if (G.hordeZ<0.45){
       G.hordeZ = Math.max(G.hordeZ, -0.2);
       G.squadFrac += (30+4*G.level)*dt;
@@ -636,14 +691,8 @@ function update(dt){
   /* --- Läufer-Trupps stürmen vor --- */
   G.runnerT -= dt;
   if (G.runnerT<=0 && G.horde>4){
-    G.runnerT = c.runnerEvery*(0.75+Math.random()*0.5);
-    const n = c.runnerSize + (Math.random()*3|0);
-    const bx = Math.random()*1.2-0.6;
-    for (let i=0;i<n;i++){
-      G.runners.push({ x:bx+(Math.random()*0.24-0.12), z:G.hordeZ+Math.random()*0.5,
-                       hp:c.runnerHP, speed:1.25+Math.random()*0.45, ph:Math.random()*6.28 });
-    }
-    G.horde = Math.max(1, G.horde - n*0.25);   // Trupps zählen halb, Rest bleibt im Pulk
+    G.runnerT = c.runnerEvery*(0.75+Math.random()*0.5)*(G.rushed?0.6:1);
+    spawnRunners(false);
   }
   for (let i=G.runners.length-1;i>=0;i--){
     const r = G.runners[i];
@@ -658,7 +707,7 @@ function update(dt){
     r.x += (G.squadX-r.x)*Math.min(1, dt*homing);
     if (r.z<=0.18){
       G.runners.splice(i,1);
-      killSquad(2 + Math.ceil(G.squad*0.03));
+      killSquad((r.elite?3:2) + Math.ceil(G.squad*(r.elite?0.04:0.025)));
       burst(r.x,0.2,8,'#e05545',1.5);
     }
   }
@@ -670,14 +719,21 @@ function update(dt){
       B.dying += dt;
       if (B.dying>1.1){ G.boss=null; maybeSpawnBoss(); }
     } else {
-      B.z = Math.max(0.42, B.z - c.bossSpeed*dt);
+      // Wutphase: unter 33 % HP wird der Boss schneller und wirft öfter
+      if (!B.enraged && B.hp<=B.hpMax*0.33){
+        B.enraged = true;
+        showBanner('BOSS RASTET AUS!', '#ef5350');
+        AudioFX.roar();
+        G.shake = Math.max(G.shake, 10);
+      }
+      B.z = Math.max(0.42, B.z - c.bossSpeed*(B.enraged?1.5:1)*dt);
       B.x += (G.squadX-B.x)*Math.min(1,dt*0.35);
       if (B.flash>0) B.flash -= dt*6;
       // Felswurf während des Anmarschs — Zielmarkierung, ausweichen!
       if (B.z>1.1){
         B.throwT -= dt;
         if (B.throwT<=0){
-          B.throwT = c.throwEvery*(0.8+Math.random()*0.4);
+          B.throwT = c.throwEvery*(B.enraged?0.55:1)*(0.8+Math.random()*0.4);
           G.rocks.push({x0:B.x, z0:B.z, tx:G.squadX, t:0, dur:1.15});
           AudioFX.whoosh();
         }
@@ -755,7 +811,7 @@ function update(dt){
       B.hp -= b.dmg; hit=true; B.flash = 0.08;
       burst(B.x+(Math.random()*0.3-0.15), B.z, 1, '#ef8070', 0.8);
       if (B.hp<=0){
-        B.dying = 0.001;
+        B.dying = 0.001; G.slowmo = 0.7;   // Zeitlupen-Moment
         burst(B.x,B.z,26,'#ffd23e',2.4,3);
         AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
       }
@@ -776,6 +832,15 @@ function update(dt){
   for (let i=G.floats.length-1;i>=0;i--){
     const f=G.floats[i]; f.t+=dt;
     if (f.t>1) G.floats.splice(i,1);
+  }
+  if (G.banner){
+    G.banner.t += dt;
+    if (G.banner.t>G.banner.dur) G.banner=null;
+  }
+  // Herzschlag, wenn die Truppe fast aufgerieben ist
+  if (G.squad>0 && G.squad<=8 && G.endTimer===0){
+    G.heartT -= dt;
+    if (G.heartT<=0){ G.heartT = 0.85; AudioFX.heart(); }
   }
 
   /* --- Sieg: erst Jubel + Konfetti, dann Overlay --- */
@@ -977,7 +1042,7 @@ function drawHorde(){
       const hx = -0.9 + 1.8*(i+hash(i,r)*0.8)/nDots;
       const p = proj(hx, z + hash(r,i)*0.15);
       const sz = Math.max(1.8, 7*p.s);
-      const bob = Math.sin(G.time*7 + hash(i,r)*6.28)*2*p.s;
+      const bob = Math.sin(G.time*(G.surgeLeft>0?13:7) + hash(i,r)*6.28)*2*p.s;
       ctx.fillStyle = cols[(i+r)%3];
       ctx.beginPath(); ctx.ellipse(p.x, p.y+bob-sz, sz*0.55, sz, 0, 0, 6.283); ctx.fill();
       ctx.fillStyle='#e8a08e';
@@ -1044,9 +1109,14 @@ function drawBoss(){
   const step=Math.sin(G.time*6)* (B.dying?0:w*0.08);
   ctx.beginPath(); ctx.ellipse(-w*0.2+step, -h*0.06, w*0.16,h*0.1,0,0,6.283); ctx.fill();
   ctx.beginPath(); ctx.ellipse( w*0.2-step, -h*0.06, w*0.16,h*0.1,0,0,6.283); ctx.fill();
-  // Körper
+  // Körper (Wutphase: dunkler, pulsierend rot)
   const bg=ctx.createLinearGradient(-w/2,0,w/2,0);
-  bg.addColorStop(0,'#ef8070'); bg.addColorStop(1,'#d05545');
+  if (B.enraged){
+    const k = 0.5+0.5*Math.sin(G.time*10);
+    bg.addColorStop(0,'#e0503c'); bg.addColorStop(1,k>0.5?'#a82424':'#c03028');
+  } else {
+    bg.addColorStop(0,'#ef8070'); bg.addColorStop(1,'#d05545');
+  }
   ctx.fillStyle=bg;
   ctx.beginPath(); ctx.ellipse(0,-h*0.5, w*0.5, h*0.46, 0,0,6.283); ctx.fill();
   // Arme (schwingen)
@@ -1095,6 +1165,17 @@ function drawRunner(r){
     ctx.beginPath(); ctx.ellipse(p.x,p.y-bob-sz, sz*0.62, sz, 0,0,6.283); ctx.fill();
     ctx.fillStyle='#ffe9a8';
     ctx.beginPath(); ctx.arc(p.x,p.y-bob-sz*2.1, sz*0.44,0,6.283); ctx.fill();
+    return;
+  }
+  if (r.elite){
+    // gepanzerter Elite-Läufer: größer, dunkler, mit Helm
+    const es = sz*1.25;
+    ctx.fillStyle='#8e1616';
+    ctx.beginPath(); ctx.ellipse(p.x,p.y-bob-es, es*0.62, es, 0,0,6.283); ctx.fill();
+    ctx.fillStyle='#e8a08e';
+    ctx.beginPath(); ctx.arc(p.x,p.y-bob-es*2.05, es*0.42,0,6.283); ctx.fill();
+    ctx.fillStyle='#3a3f47';
+    ctx.beginPath(); ctx.arc(p.x,p.y-bob-es*2.15, es*0.45, Math.PI, 0); ctx.fill();
     return;
   }
   ctx.fillStyle='#d43a3a';
@@ -1220,6 +1301,30 @@ function draw(){
   drawParticles();
   drawFloats();
   ctx.restore();
+  // Warn-Vignette bei fast aufgeriebener Truppe (ohne Shake, screen-space)
+  if (G.state==='play' && G.squad>0 && G.squad<=8 && G.endTimer===0){
+    const a = 0.16+0.1*Math.sin(G.time*6);
+    const vg = ctx.createRadialGradient(CX,H*0.55,H*0.3, CX,H*0.55,H*0.75);
+    vg.addColorStop(0,'rgba(200,20,20,0)');
+    vg.addColorStop(1,'rgba(200,20,20,'+a.toFixed(2)+')');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  }
+  // Ereignis-Banner
+  if (G.banner){
+    const b=G.banner;
+    const pop = b.t<0.15 ? b.t/0.15 : 1;
+    const fade = b.t>b.dur-0.4 ? (b.dur-b.t)/0.4 : 1;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0,fade);
+    ctx.translate(CX, H*0.30);
+    ctx.scale(0.6+0.4*pop, 0.6+0.4*pop);
+    ctx.font = `${Math.max(30,W*0.095)}px 'Lilita One',system-ui,sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.lineWidth=8; ctx.strokeStyle='rgba(14,27,42,.85)';
+    ctx.strokeText(b.txt,0,0);
+    ctx.fillStyle=b.col; ctx.fillText(b.txt,0,0);
+    ctx.restore();
+  }
 }
 
 /* ---------- Hauptschleife ---------- */
@@ -1227,7 +1332,11 @@ let last = performance.now();
 function frame(now){
   const dt = Math.min((now-last)/1000, 0.05);
   last = now;
-  if (G.state==='play'){ update(dt); needsDraw = true; }
+  if (G.state==='play'){
+    let du = dt;
+    if (G.slowmo>0){ G.slowmo -= dt; du = dt*0.35; }   // Zeitlupe (Boss-Kill)
+    update(du); needsDraw = true;
+  }
   else if (G.shake>0){ G.shake = Math.max(0, G.shake - dt*30); needsDraw = true; }
   if (needsDraw){ draw(); needsDraw = (G.state==='play'); }
   requestAnimationFrame(frame);
@@ -1239,7 +1348,7 @@ function boot(data){
   G.best  = Math.max(G.level, (data && data.best) || store.get('best',1));
   AudioFX.setMuted(store.get('mute',false));
   el('btnMute').textContent = AudioFX.muted ? '🔇' : '🔊';
-  el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Tipp: Bomben einsammeln ruft einen Luftschlag — und weiche roten Toren aus!';
+  el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Achtung: Bei "WELLE!" sprintet die Horde — Bomben und ×2-Tore retten dich!';
   resize();
   setState('menu');
   requestAnimationFrame(t=>{ last=t; requestAnimationFrame(frame); });
