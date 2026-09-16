@@ -23,6 +23,8 @@ Da keine Daten erhoben werden, gibt es nichts, das eingesehen, korrigiert
 oder gelöscht werden müsste — du hast alles bereits selbst in der Hand.
 Löschen der App löscht alle Daten.
 
+Nutzungsbedingungen: siehe [Nutzungsbedingungen / Terms of Use](https://ibagnoli-creator.github.io/everdoc-legal/terms/)
+
 Kontakt: i.bagnoli@hotmail.com
 
 ## English
@@ -43,5 +45,7 @@ Kontakt: i.bagnoli@hotmail.com
 
 Since no data is collected, there is nothing to access, rectify or erase —
 everything is already in your hands. Deleting the app deletes all data.
+
+Terms of Use: see [Nutzungsbedingungen / Terms of Use](https://ibagnoli-creator.github.io/everdoc-legal/terms/)
 
 Contact: i.bagnoli@hotmail.com
