@@ -58,7 +58,7 @@
   .screen{
     position:fixed; inset:0; z-index:10;
     display:flex; flex-direction:column; align-items:center;
-    overflow-y:auto;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
     gap:14px; text-align:center; padding:24px;
     padding-top:calc(24px + env(safe-area-inset-top,0px));
     padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
@@ -144,9 +144,10 @@
   /* Skin-Auswahl */
   .skins{display:flex; gap:8px;}
   .sdot{
-    width:36px; height:36px; border-radius:50%; border:3px solid transparent;
-    font-family:var(--disp); font-size:12px; color:#fff; line-height:32px;
-    text-align:center; padding:0; text-shadow:0 1px 2px rgba(0,0,0,.6);
+    width:44px; height:44px; border-radius:50%; border:3px solid transparent;
+    padding:4px; background-clip:content-box;
+    font-family:var(--disp); font-size:12px; color:#fff; line-height:30px;
+    text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.6);
   }
   .sdot.sel{border-color:#fff;}
   .sdot.lock{opacity:.4;}
@@ -207,7 +208,7 @@
   <h1 class="win">SIEG!</h1>
   <div class="coinchip" id="coinsWin">+0 🪙</div>
   <p id="winText">Level 1 geschafft — die Brücke ist frei.</p>
-  <div class="btrack"><div class="bzone"></div><div class="bmark" id="bonusMark"></div></div>
+  <div class="btrack" id="bonusTrack"><div class="bzone"></div><div class="bmark" id="bonusMark"></div></div>
   <button id="btnBonus" class="buy">BONUS ×2 — triff die Mitte!</button>
   <button id="btnNext" class="btn gold">WEITER ▶</button>
   <button id="btnMenuWin" class="btn ghost">🏠 Menü &amp; Shop</button>
@@ -452,7 +453,8 @@ const G = {
   state:'menu',            // menu | shop | play | win | lose | pause
   level:1, best:1,
   coins:0, upgS:0, upgF:0, reviveUsed:false, runCoins:0, winSquad:0,
-  missions:null, skin:0, lastReward:0, barrels:[], barrelT:0,
+  missions:null, runMissions:{}, skin:0, lastReward:0, barrels:[], barrelT:0,
+  bannerQueue:[],
   squad:0, squadFrac:0, squadX:0,
   horde:0, hordeMax:1, hordeZ:14,
   gates:[], bullets:[], runners:[], parts:[], floats:[],
@@ -509,6 +511,7 @@ function startLevel(){
   const fails = Math.min(store.get('fails',0), 3);
   G.squad = c.startSquad + G.upgS*3 + fails*3; G.squadFrac = 0; G.squadX = 0;
   G.reviveUsed = false; G.runCoins = 0;   // Boss-Prämien verfallen bei Neustart
+  G.runMissions = {}; G.bannerQueue.length = 0;
   G.barrels.length = 0; G.barrelT = 6+Math.random()*5;
   G.horde = c.horde; G.hordeMax = c.horde; G.hordeZ = 13.5;
   G.gates.length=0; G.bullets.length=0; G.runners.length=0;
@@ -531,9 +534,12 @@ function startLevel(){
   setState('play');
 }
 
-function loadMissions(){
+function dayKey(){
   const d = new Date();
-  const key = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+  return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+}
+function loadMissions(){
+  const key = dayKey();
   let m = store.get('missions', null);
   if (!m || m.day!==key){
     let seed = 0;
@@ -551,16 +557,27 @@ function loadMissions(){
   G.missions = m;
 }
 function addMission(id, n){
-  const m = G.missions && G.missions.list.find(x=>x.id===id && !x.done);
-  if (!m) return;
-  m.p += n;
-  if (m.p>=m.goal){
-    m.p = m.goal; m.done = true;
-    G.coins += MISSION_REWARD; store.set('coins',G.coins);
-    showBanner('MISSION ERFÜLLT! +'+MISSION_REWARD+' 🪙', '#7ce87c');
-    AudioFX.coin();
+  // Fortschritt läuft im Lauf-Puffer und zählt erst beim Sieg —
+  // kostenlose Level-Neustarts farmen so keine Missionsprämien.
+  if (!G.missions || G.missions.day!==dayKey()){ loadMissions(); G.runMissions = {}; }
+  G.runMissions[id] = (G.runMissions[id]||0) + n;
+}
+function commitMissions(){
+  if (!G.missions || G.missions.day!==dayKey()){ loadMissions(); G.runMissions = {}; return; }
+  let changed = false;
+  for (const id in G.runMissions){
+    const m = G.missions.list.find(x=>x.id===id && !x.done);
+    if (!m) continue;
+    m.p += G.runMissions[id]; changed = true;
+    if (m.p>=m.goal){
+      m.p = m.goal; m.done = true;
+      G.coins += MISSION_REWARD; store.set('coins',G.coins);
+      showBanner('MISSION ERFÜLLT! +'+MISSION_REWARD+' 🪙', '#7ce87c');
+      AudioFX.coin();
+    }
   }
-  store.set('missions', G.missions);
+  G.runMissions = {};
+  if (changed) store.set('missions', G.missions);
 }
 
 function mkGate(x,z,val){
@@ -637,6 +654,14 @@ el('btnBonus').addEventListener('click', ()=>{
   const btn = el('btnBonus');
   if (btn.disabled || G.state!=='win') return;
   btn.disabled = true;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches){
+    const half = Math.round(G.lastReward*0.5);
+    G.coins += half; store.set('coins',G.coins);
+    el('coinsWin').textContent = '+'+(G.lastReward+half)+' 🪙 (Bonus!)';
+    btn.textContent = 'BONUS! 🎉';
+    AudioFX.coin();
+    return;
+  }
   const mark = el('bonusMark').getBoundingClientRect();
   const zone = document.querySelector('.bzone').getBoundingClientRect();
   const cx2 = mark.left + mark.width/2;
@@ -693,7 +718,10 @@ function endDrag(e){ if (e.pointerId===dragId) dragId=null; }
 cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 document.addEventListener('contextmenu', e=>e.preventDefault());
-document.addEventListener('touchmove', e=>e.preventDefault(), {passive:false});
+// Scrollen in Overlays erlauben, nur das Spielfeld selbst sperren
+document.addEventListener('touchmove', e=>{
+  if (!e.target.closest('.screen')) e.preventDefault();
+}, {passive:false});
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('visibilitychange', ()=>{
   if (document.hidden){ if (G.state==='play') setState('pause'); }
@@ -730,7 +758,11 @@ function burst(x,z,n,col,spd,up,sz){
   }
 }
 function floatText(x,z,txt,col){ G.floats.push({x,z,txt,col,t:0}); }
-function showBanner(txt,col){ G.banner = {txt, col, t:0, dur:1.6}; }
+function showBanner(txt,col){
+  const b = {txt, col, t:0, dur:1.6};
+  if (!G.banner) G.banner = b;
+  else if (G.bannerQueue.length<3) G.bannerQueue.push(b);   // nacheinander zeigen
+}
 function spawnRunners(forceElite){
   const c = G.cfg;
   // Druckventil: nie mehr als ~10 Läufer gleichzeitig auf der Brücke
@@ -761,11 +793,13 @@ function killSquad(n){
   AudioFX.splat();
   if (G.squad<=0 && G.state==='play' && G.endTimer===0){
     G.shake=Math.max(G.shake,14); AudioFX.lose();
-    store.set('fails', store.get('fails',0)+1);
+    if (!G.reviveUsed) store.set('fails', store.get('fails',0)+1);   // 1 Fehlversuch pro Anlauf
     const rem = Math.max(0,Math.ceil(G.horde));
     const pct = G.hordeMax ? Math.round(rem/G.hordeMax*100) : 0;
-    el('loseText').textContent = (pct<=15 ? 'SO KNAPP! ' : '')
-      +'Noch '+rem+' von '+G.hordeMax+' Gegnern ('+pct+' %). Bestes Level: '+G.best;
+    let msg;
+    if (rem<=0) msg = G.boss ? 'Der Boss hat dich erwischt!' : 'Die letzten Läufer haben dich erwischt!';
+    else msg = (pct<=15 ? 'SO KNAPP! ' : '')+'Noch '+rem+' von '+G.hordeMax+' Gegnern ('+pct+' %).';
+    el('loseText').textContent = msg+' Bestes Level: '+G.best;
     setState('lose');
   }
 }
@@ -877,6 +911,7 @@ function update(dt){
     }
     if (g.z<-1.6) G.gates.splice(i,1);
   }
+  if (G.state!=='play') return;   // Niederlage im selben Frame: nichts mehr verarbeiten
 
   /* --- Bomben-Pickup → Luftschlag --- */
   G.airSpawnT -= dt;
@@ -997,6 +1032,7 @@ function update(dt){
       burst(r.x,0.2,8,'#e05545',1.5);
     }
   }
+  if (G.state!=='play') return;
 
   /* --- Boss --- */
   const B = G.boss;
@@ -1060,6 +1096,7 @@ function update(dt){
       }
     }
   }
+  if (G.state!=='play') return;
 
   /* --- Salven & Kugeln --- */
   if (G.muzzleT>0) G.muzzleT -= dt;
@@ -1157,7 +1194,7 @@ function update(dt){
   }
   if (G.banner){
     G.banner.t += dt;
-    if (G.banner.t>G.banner.dur) G.banner=null;
+    if (G.banner.t>G.banner.dur) G.banner = G.bannerQueue.shift() || null;
   }
   if (G.vanFlash>0) G.vanFlash -= dt;
   // Herzschlag, wenn die Truppe fast aufgerieben ist
@@ -1172,6 +1209,7 @@ function update(dt){
       G.cheer = true;
       G.winSquad = G.squad;       // Belohnung beim Jubelstart einfrieren
       G.bullets.length = 0;
+      commitMissions();           // Missionsfortschritt zählt nur bei Siegen
       AudioFX.win();
       const conf = ['#ffd23e','#5a8bff','#ef5350','#7ce87c','#c9a4ff'];
       for (let i=0;i<10;i++)
@@ -1188,7 +1226,10 @@ function update(dt){
       store.set('fails', 0);
       el('coinsWin').textContent = '+'+reward+' 🪙';
       el('btnBonus').disabled = false;
-      el('btnBonus').textContent = 'BONUS ×2 — triff die Mitte!';
+      // Bei "Bewegung reduzieren" steht der Marker still → fairer Festbonus statt Freifahrtschein
+      const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      el('bonusTrack').hidden = rm;
+      el('btnBonus').textContent = rm ? 'BONUS +50 %' : 'BONUS ×2 — triff die Mitte!';
       el('winText').textContent = 'Level '+done+' geschafft — '+G.winSquad+' Soldaten übrig!';
       setState('win');
     }
@@ -1698,6 +1739,9 @@ function draw(){
     ctx.translate(CX, H*0.30);
     ctx.scale(0.6+0.4*pop, 0.6+0.4*pop);
     ctx.font = `${Math.max(30,W*0.095)}px 'Lilita One',system-ui,sans-serif`;
+    // lange Banner (z. B. Missionen) auf Bildschirmbreite einpassen
+    const fit = Math.min(1, (W-24)/Math.max(1, ctx.measureText(b.txt).width));
+    ctx.scale(fit, fit);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.lineWidth=8; ctx.strokeStyle='rgba(14,27,42,.85)';
     ctx.strokeText(b.txt,0,0);
