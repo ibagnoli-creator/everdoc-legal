@@ -57,7 +57,8 @@
   /* ---------- Overlays ---------- */
   .screen{
     position:fixed; inset:0; z-index:10;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    display:flex; flex-direction:column; align-items:center;
+    overflow-y:auto;
     gap:14px; text-align:center; padding:24px;
     padding-top:calc(24px + env(safe-area-inset-top,0px));
     padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
@@ -65,6 +66,9 @@
     -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
   }
   [hidden]{display:none!important;}
+  /* zentriert, solange der Inhalt passt — scrollbar, wenn nicht (iPhone SE) */
+  .screen > :first-child{margin-top:auto;}
+  .screen > :last-child{margin-bottom:auto;}
   .screen h1{
     font-family:var(--disp); font-weight:400; margin:0;
     font-size:clamp(44px,13vw,76px); line-height:1.02; letter-spacing:.02em;
@@ -113,6 +117,39 @@
   }
   .buy:active{transform:translateY(3px); box-shadow:0 1px 0 #a87d00;}
   .buy:disabled{filter:grayscale(1) brightness(.7); box-shadow:none; transform:none;}
+  /* Tagesmissionen */
+  .mlabel{font-family:var(--disp); font-size:13px; letter-spacing:.12em; color:var(--ink-dim);}
+  .missions{display:flex; flex-direction:column; gap:6px; width:min(330px,86vw);}
+  .mrow{
+    display:flex; justify-content:space-between; gap:10px; font-size:14px;
+    color:var(--ink-dim); background:rgba(255,255,255,.05);
+    padding:8px 14px; border-radius:10px; text-align:left;
+  }
+  .mrow.done{color:#7ce87c; background:rgba(124,232,124,.08);}
+  .mrow b{font-variant-numeric:tabular-nums; white-space:nowrap;}
+  /* Bonus-×2-Leiste (Sieg-Screen) */
+  .btrack{
+    position:relative; width:min(300px,80vw); height:14px; border-radius:7px;
+    background:rgba(255,255,255,.12); overflow:visible;
+  }
+  .bzone{position:absolute; left:39%; width:22%; top:0; bottom:0; background:var(--gold); border-radius:7px;}
+  .bmark{
+    position:absolute; top:-4px; width:6px; height:22px; border-radius:3px;
+    background:#fff; left:48%; box-shadow:0 0 6px rgba(255,255,255,.8);
+  }
+  @media (prefers-reduced-motion:no-preference){
+    .bmark{animation:bmove 1.05s linear infinite alternate;}
+    @keyframes bmove{from{left:2%;} to{left:96%;}}
+  }
+  /* Skin-Auswahl */
+  .skins{display:flex; gap:8px;}
+  .sdot{
+    width:36px; height:36px; border-radius:50%; border:3px solid transparent;
+    font-family:var(--disp); font-size:12px; color:#fff; line-height:32px;
+    text-align:center; padding:0; text-shadow:0 1px 2px rgba(0,0,0,.6);
+  }
+  .sdot.sel{border-color:#fff;}
+  .sdot.lock{opacity:.4;}
   @media (prefers-reduced-motion:no-preference){
     .screen h1{animation:pop .45s cubic-bezier(.2,1.6,.4,1) both;}
     @keyframes pop{from{transform:scale(.6); opacity:0;} to{transform:scale(1); opacity:1;}}
@@ -131,6 +168,8 @@
   <div class="coinchip" id="coinsStart">🪙 0</div>
   <p>Wisch nach links und rechts, sammle Tore und stoppe die rote Flut, bevor sie deine Truppe überrennt!</p>
   <div class="legend"><span class="tag b" id="legBlue">+1</span><span class="tag g">+23</span><span class="tag v">×2</span><span class="tag r">−10</span></div>
+  <div class="mlabel">TAGESMISSIONEN</div>
+  <div class="missions" id="missionList"></div>
   <button id="btnStart" class="btn gold">SPIELEN</button>
   <button id="btnShop" class="btn ghost">🛒 Shop</button>
   <p class="hint" id="startHint"></p>
@@ -153,6 +192,13 @@
     </div>
     <button class="buy" id="buyF">🪙 60</button>
   </div>
+  <div class="shoprow">
+    <div class="info">
+      <div class="name">Truppen-Skin</div>
+      <div class="lvl" id="skinInfo">Freischalten über dein Bestlevel</div>
+    </div>
+    <div class="skins" id="skinRow"></div>
+  </div>
   <p class="hint">Münzen verdienst du mit Siegen und Boss-Kills.</p>
   <button id="btnShopBack" class="btn">ZURÜCK</button>
 </div>
@@ -161,6 +207,8 @@
   <h1 class="win">SIEG!</h1>
   <div class="coinchip" id="coinsWin">+0 🪙</div>
   <p id="winText">Level 1 geschafft — die Brücke ist frei.</p>
+  <div class="btrack"><div class="bzone"></div><div class="bmark" id="bonusMark"></div></div>
+  <button id="btnBonus" class="buy">BONUS ×2 — triff die Mitte!</button>
   <button id="btnNext" class="btn gold">WEITER ▶</button>
   <button id="btnMenuWin" class="btn ghost">🏠 Menü &amp; Shop</button>
 </div>
@@ -374,6 +422,25 @@ const AudioFX = (()=>{
   };
 })();
 
+/* ---------- Truppen-Skins (Freischaltung über Bestlevel) ---------- */
+const SKINS = [
+  { name:'Blau',   body:'#3563e8', hi:'#4a74f0', helm:'#24449c', need:1 },
+  { name:'Grün',   body:'#2e9e4f', hi:'#3db763', helm:'#1d6b36', need:3 },
+  { name:'Orange', body:'#e8762e', hi:'#f08a47', helm:'#9e4a17', need:6 },
+  { name:'Pink',   body:'#d84a9e', hi:'#e668b3', helm:'#8e2a66', need:9 },
+];
+
+/* ---------- Tagesmissionen ---------- */
+const MISSION_DEFS = [
+  { id:'bus',  txt:'Zerstöre {n} gelbe Busse',   goal:2 },
+  { id:'boss', txt:'Besiege {n} Bosse',          goal:2 },
+  { id:'gold', txt:'Fange {n} Gold-Läufer',      goal:2 },
+  { id:'x2',   txt:'Nimm {n} ×2-Tore',           goal:3 },
+  { id:'air',  txt:'Rufe {n} Luftschläge',       goal:3 },
+  { id:'rekr', txt:'Rekrutiere {n} Soldaten',    goal:300 },
+];
+const MISSION_REWARD = 35;
+
 /* ---------- Persistenz ---------- */
 const store = {
   get(k,d){ try{ const v=localStorage.getItem('bs.'+k); return v===null?d:JSON.parse(v);}catch(e){ return d; } },
@@ -385,6 +452,7 @@ const G = {
   state:'menu',            // menu | shop | play | win | lose | pause
   level:1, best:1,
   coins:0, upgS:0, upgF:0, reviveUsed:false, runCoins:0, winSquad:0,
+  missions:null, skin:0, lastReward:0, barrels:[], barrelT:0,
   squad:0, squadFrac:0, squadX:0,
   horde:0, hordeMax:1, hordeZ:14,
   gates:[], bullets:[], runners:[], parts:[], floats:[],
@@ -437,8 +505,11 @@ function levelCfg(l){
 
 function startLevel(){
   const c = G.cfg = levelCfg(G.level);
-  G.squad = c.startSquad + G.upgS*3; G.squadFrac = 0; G.squadX = 0;
+  // stille Starthilfe nach wiederholten Niederlagen (friktionslose erste Session)
+  const fails = Math.min(store.get('fails',0), 3);
+  G.squad = c.startSquad + G.upgS*3 + fails*3; G.squadFrac = 0; G.squadX = 0;
   G.reviveUsed = false; G.runCoins = 0;   // Boss-Prämien verfallen bei Neustart
+  G.barrels.length = 0; G.barrelT = 6+Math.random()*5;
   G.horde = c.horde; G.hordeMax = c.horde; G.hordeZ = 13.5;
   G.gates.length=0; G.bullets.length=0; G.runners.length=0;
   G.parts.length=0; G.floats.length=0;
@@ -460,6 +531,38 @@ function startLevel(){
   setState('play');
 }
 
+function loadMissions(){
+  const d = new Date();
+  const key = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+  let m = store.get('missions', null);
+  if (!m || m.day!==key){
+    let seed = 0;
+    for (const ch of key) seed = (seed*31 + ch.charCodeAt(0))>>>0;
+    const idx = [];
+    let i = seed;
+    while (idx.length<3){
+      i = (i*1103515245+12345)>>>0;
+      const k = i%MISSION_DEFS.length;
+      if (!idx.includes(k)) idx.push(k);
+    }
+    m = { day:key, list: idx.map(k=>({ id:MISSION_DEFS[k].id, goal:MISSION_DEFS[k].goal, p:0, done:false })) };
+    store.set('missions', m);
+  }
+  G.missions = m;
+}
+function addMission(id, n){
+  const m = G.missions && G.missions.list.find(x=>x.id===id && !x.done);
+  if (!m) return;
+  m.p += n;
+  if (m.p>=m.goal){
+    m.p = m.goal; m.done = true;
+    G.coins += MISSION_REWARD; store.set('coins',G.coins);
+    showBanner('MISSION ERFÜLLT! +'+MISSION_REWARD+' 🪙', '#7ce87c');
+    AudioFX.coin();
+  }
+  store.set('missions', G.missions);
+}
+
 function mkGate(x,z,val){
   const w = val==='x2' ? 0.5 : (val>1 ? 0.46 : 0.42);
   return {x, z, val, w, taken:false, flash:0};
@@ -471,8 +574,23 @@ const screens = { menu:el('scrStart'), shop:el('scrShop'), win:el('scrWin'), los
 const upgSPrice = ()=>Math.round(50*Math.pow(1.6,G.upgS));
 const upgFPrice = ()=>Math.round(60*Math.pow(1.7,G.upgF));
 function refreshMeta(){
-  el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Schieß den gelben Bus ab — erst dann rollen die goldenen +23-Tore an!';
+  el('startHint').textContent = G.level>1
+    ? 'Weiter bei Level '+G.level+' · Bestlevel: '+G.best
+    : 'Schieß den gelben Bus ab — erst dann rollen die goldenen +23-Tore an!';
   el('legBlue').textContent = '+'+levelCfg(G.level).blueVal;
+  loadMissions();   // bei Tageswechsel neue Missionen
+  el('missionList').innerHTML = G.missions.list.map(m=>{
+    const def = MISSION_DEFS.find(d=>d.id===m.id);
+    return '<div class="mrow'+(m.done?' done':'')+'"><span>'
+      +(m.done?'✓ ':'')+def.txt.replace('{n}', m.goal)
+      +'</span><b>'+Math.min(m.p,m.goal)+'/'+m.goal+'</b></div>';
+  }).join('');
+  el('skinRow').innerHTML = SKINS.map((s,i)=>{
+    const locked = G.best < s.need;
+    return '<button class="sdot'+(i===G.skin?' sel':'')+(locked?' lock':'')
+      +'" data-skin="'+i+'" style="background:'+s.body+'" aria-label="Skin '+s.name+'">'
+      +(locked ? 'L'+s.need : '')+'</button>';
+  }).join('');
   el('coinsStart').textContent = '🪙 '+G.coins;
   el('coinsShop').textContent  = '🪙 '+G.coins;
   el('upgSLvl').textContent = 'Stufe '+G.upgS+' · Start: '+(8+G.upgS*3);
@@ -507,6 +625,31 @@ el('btnMute').addEventListener('click', ()=>{
 });
 el('btnShop').addEventListener('click', ()=>{ AudioFX.unlock(); setState('shop'); });
 el('btnShopBack').addEventListener('click', ()=>setState('menu'));
+el('skinRow').addEventListener('click', e=>{
+  const b = e.target.closest('[data-skin]');
+  if (!b) return;
+  const i = +b.dataset.skin;
+  if (G.best >= SKINS[i].need){ G.skin = i; store.set('skin',i); AudioFX.gate(); refreshMeta(); }
+  else AudioFX.buzz();
+});
+// Bonus ×2: bewegten Marker in der Goldzone treffen (1 Versuch pro Sieg)
+el('btnBonus').addEventListener('click', ()=>{
+  const btn = el('btnBonus');
+  if (btn.disabled || G.state!=='win') return;
+  btn.disabled = true;
+  const mark = el('bonusMark').getBoundingClientRect();
+  const zone = document.querySelector('.bzone').getBoundingClientRect();
+  const cx2 = mark.left + mark.width/2;
+  if (cx2 >= zone.left && cx2 <= zone.right){
+    G.coins += G.lastReward; store.set('coins',G.coins);
+    el('coinsWin').textContent = '+'+(G.lastReward*2)+' 🪙 (×2!)';
+    btn.textContent = 'VERDOPPELT! 🎉';
+    AudioFX.coin();
+  } else {
+    btn.textContent = 'Daneben …';
+    AudioFX.buzz();
+  }
+});
 el('buyS').addEventListener('click', ()=>{
   const p = upgSPrice();
   if (G.coins>=p){ G.coins-=p; G.upgS++; store.set('coins',G.coins); store.set('upgS',G.upgS); AudioFX.coin(); refreshMeta(); }
@@ -618,7 +761,11 @@ function killSquad(n){
   AudioFX.splat();
   if (G.squad<=0 && G.state==='play' && G.endTimer===0){
     G.shake=Math.max(G.shake,14); AudioFX.lose();
-    el('loseText').textContent = 'Die Horde hat dich überrannt. Noch '+Math.max(0,Math.ceil(G.horde))+' Gegner übrig.';
+    store.set('fails', store.get('fails',0)+1);
+    const rem = Math.max(0,Math.ceil(G.horde));
+    const pct = G.hordeMax ? Math.round(rem/G.hordeMax*100) : 0;
+    el('loseText').textContent = (pct<=15 ? 'SO KNAPP! ' : '')
+      +'Noch '+rem+' von '+G.hordeMax+' Gegnern ('+pct+' %). Bestes Level: '+G.best;
     setState('lose');
   }
 }
@@ -637,6 +784,7 @@ function bossKilled(B){
   B.paid = true;
   G.runCoins += 5;
   floatText(B.x, B.z, '+5 🪙', '#ffd23e');
+  addMission('boss',1);
 }
 
 function destroyVan(){
@@ -650,6 +798,7 @@ function destroyVan(){
   burst(0.58, vz, 12, '#ff9c3d', 2.6, 3, 6);
   floatText(0.58, vz-0.5, '+15', '#ffd23e');
   showBanner('BUS ZERSTÖRT!', '#ffd23e');
+  addMission('bus',1); addMission('rekr',15);
   G.shake = Math.max(G.shake, 11);
   AudioFX.boom(); AudioFX.coin();
 }
@@ -707,6 +856,7 @@ function update(dt){
         if (g.val==='x2'){
           const gain = Math.min(G.squad, 120);
           G.squad += gain;
+          addMission('x2',1); addMission('rekr',gain);
           floatText(g.x, 0.6, '×2', '#c9a4ff');
           burst(g.x,0.4,18,'#a78bfa',1.6,2.4);
           AudioFX.bigGate();
@@ -717,6 +867,7 @@ function update(dt){
           AudioFX.buzz();
         } else {
           G.squad += g.val;
+          addMission('rekr', g.val);
           const big = g.val>=23;
           floatText(g.x, 0.6, '+'+g.val, big?'#ffd23e':'#7ea2ff');
           burst(g.x,0.4,big?16:6, big?'#ffd23e':'#7ea2ff',1.4,2.2);
@@ -742,6 +893,7 @@ function update(dt){
       for (let s=0;s<5;s++) G.airQueue.push({d:0.9+s*0.16, x:-0.7+s*0.35});
       floatText(pk.x, 0.7, 'LUFTSCHLAG!', '#ffd23e');
       AudioFX.whoosh(); AudioFX.bigGate();
+      addMission('air',1);
     } else if (pk.z<-1.2) G.pickups.splice(i,1);
   }
   if (G.planeT>0) G.planeT = Math.max(0, G.planeT - dt/1.1);
@@ -885,6 +1037,15 @@ function update(dt){
     }
   }
 
+  /* --- Explosive Fässer in der Hordenfront --- */
+  G.barrelT -= dt;
+  if (G.barrelT<=0){
+    if (G.horde>60 && G.barrels.length<2)
+      G.barrels.push({ x:Math.random()*1.4-0.7, hp:6+G.level, flash:0 });
+    G.barrelT = 8+Math.random()*5;
+  }
+  for (const bl of G.barrels) if (bl.flash>0) bl.flash -= dt*6;
+
   /* --- Felsbrocken des Bosses --- */
   for (let i=G.rocks.length-1;i>=0;i--){
     const r = G.rocks[i];
@@ -932,6 +1093,7 @@ function update(dt){
           G.runners.splice(j,1);
           if (r.gold){
             G.squad += 20;
+            addMission('gold',1); addMission('rekr',20);
             floatText(r.x, r.z, '+20', '#ffd23e');
             burst(r.x,r.z,16,'#ffd23e',2,3);
             AudioFX.coin();
@@ -950,7 +1112,25 @@ function update(dt){
         AudioFX.bossDie(); G.shake=Math.max(G.shake,12);
       }
     }
-    // 3. Gelber Bus: schluckt Beschuss auf der rechten Flanke, bis er explodiert
+    // 3. Explosives Fass in der Hordenfront
+    if (!hit && G.horde>0){
+      for (let j=G.barrels.length-1;j>=0;j--){
+        const bl = G.barrels[j];
+        if (Math.abs(b.x-bl.x)<0.1 && b.z>=G.hordeZ-0.25){
+          bl.hp -= b.dmg; bl.flash = 0.1; hit = true;
+          if (bl.hp<=0){
+            G.barrels.splice(j,1);
+            damageHorde(15+3*G.level);
+            burst(bl.x, G.hordeZ, 24, '#ff9c3d', 3, 3.5, 7);
+            burst(bl.x, G.hordeZ, 12, '#6b5a48', 2, 2.5, 5);
+            G.shake = Math.max(G.shake, 8);
+            AudioFX.boom();
+          }
+          break;
+        }
+      }
+    }
+    // 4. Gelber Bus: schluckt Beschuss auf der rechten Flanke, bis er explodiert
     if (!hit && !G.vanDead && G.horde>0 && Math.abs(b.x-0.58)<0.22){
       if (b.z>=G.hordeZ+0.55){
         G.vanHP -= b.dmg; G.vanFlash = 0.08; hit=true;
@@ -958,7 +1138,7 @@ function update(dt){
         if (G.vanHP<=0) destroyVan();
       }
     }
-    // 4. Pulk
+    // 5. Pulk
     else if (!hit && b.z>=G.hordeZ){
       if (G.horde>0){ damageHorde(b.dmg); hit=true; }
     }
@@ -1001,11 +1181,14 @@ function update(dt){
     if (G.endTimer>1.5){
       const done = G.level;
       const reward = 10 + 2*done + Math.floor(G.winSquad/10) + G.runCoins;
-      G.coins += reward; G.runCoins = 0;
+      G.coins += reward; G.runCoins = 0; G.lastReward = reward;
       // Fortschritt sofort sichern — nicht erst beim WEITER-Klick
       G.level = done+1; G.best = Math.max(G.best, G.level);
       store.set('coins',G.coins); store.set('level',G.level); store.set('best',G.best);
+      store.set('fails', 0);
       el('coinsWin').textContent = '+'+reward+' 🪙';
+      el('btnBonus').disabled = false;
+      el('btnBonus').textContent = 'BONUS ×2 — triff die Mitte!';
       el('winText').textContent = 'Level '+done+' geschafft — '+G.winSquad+' Soldaten übrig!';
       setState('win');
     }
@@ -1329,6 +1512,22 @@ function drawBoss(){
   }
 }
 
+function drawBarrels(){
+  if (G.horde<=0) return;
+  for (const bl of G.barrels){
+    const p = proj(bl.x, G.hordeZ-0.1);
+    if (p.s<0.07) continue;
+    const w = Math.max(6, 0.11*RH*p.s), h = w*1.3;
+    shadow(p.x, p.y, w*0.7, w*0.2);
+    ctx.fillStyle = bl.flash>0 ? '#ff7a5e' : '#c9402e';
+    rrect(p.x-w/2, p.y-h, w, h, w*0.25); ctx.fill();
+    ctx.fillStyle='#ffd23e';
+    ctx.fillRect(p.x-w/2, p.y-h*0.62, w, h*0.2);
+    ctx.fillStyle='#8e2318';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y-h, w*0.5, w*0.16, 0, 0, 6.283); ctx.fill();
+  }
+}
+
 function drawRunner(r){
   const p=proj(r.x,r.z);
   const sz=Math.max(2.5, 7*p.s);
@@ -1377,8 +1576,9 @@ function drawSquad(){
     ctx.strokeStyle='#1d3266'; ctx.lineWidth=uw*0.24; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(x-uw*0.16,y-uh*0.32); ctx.lineTo(x-uw*0.2+run*uw*0.12, y); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x+uw*0.16,y-uh*0.32); ctx.lineTo(x+uw*0.2-run*uw*0.12, y); ctx.stroke();
-    // Körper
-    ctx.fillStyle = i%7===0 ? '#4a74f0' : '#3563e8';
+    // Körper (Skin-Farben)
+    const sk = SKINS[G.skin] || SKINS[0];
+    ctx.fillStyle = i%7===0 ? sk.hi : sk.body;
     rrect(x-uw*0.32, y-uh*0.78, uw*0.64, uh*0.5, uw*0.3); ctx.fill();
     // Waffe
     ctx.strokeStyle='#2a2f3a'; ctx.lineWidth=uw*0.16;
@@ -1386,7 +1586,7 @@ function drawSquad(){
     // Kopf + Helm
     ctx.fillStyle='#f0c8a0';
     ctx.beginPath(); ctx.arc(x,y-uh*0.9, uw*0.3,0,6.283); ctx.fill();
-    ctx.fillStyle='#24449c';
+    ctx.fillStyle = sk.helm;
     ctx.beginPath(); ctx.arc(x,y-uh*0.95, uw*0.32, Math.PI, 0); ctx.fill();
   }
   // Mündungsfeuer
@@ -1467,6 +1667,7 @@ function draw(){
   for (const g of far) drawGate(g);
   drawPickups(pkFar);
   drawHorde();
+  drawBarrels();
   drawVan();
   drawBoss();
   for (const g of near) drawGate(g);
@@ -1527,6 +1728,9 @@ function boot(data){
   G.coins = Math.max(0, (data && data.coins) ?? store.get('coins',0));
   G.upgS  = Math.max(0, (data && data.upgS) ?? store.get('upgS',0));
   G.upgF  = Math.max(0, (data && data.upgF) ?? store.get('upgF',0));
+  G.skin  = Math.max(0, Math.min(SKINS.length-1, store.get('skin',0)));
+  if (G.best < SKINS[G.skin].need) G.skin = 0;
+  loadMissions();
   AudioFX.setMuted(store.get('mute',false));
   el('btnMute').textContent = AudioFX.muted ? '🔇' : '🔊';
   el('startHint').textContent = G.level>1 ? 'Weiter bei Level '+G.level : 'Schieß den gelben Bus ab — erst dann rollen die goldenen +23-Tore an!';
