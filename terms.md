@@ -17,7 +17,8 @@ lizenzierte Apps (EULA) von Apple**:
 
 - Everdoc ist gratis für bis zu 30 Dokumente inklusive Scannen, Erinnerungen,
   Backup und Export. Everdoc Pro schaltet unbegrenzte Dokumente, das
-  Steuer-PDF und den Kündigungsbrief-Generator frei.
+  Steuer-PDF, den Kündigungsbrief-Generator und individuelle Erinnerungen
+  pro Dokument frei.
 - Everdoc Pro ist ein Abo mit automatischer Verlängerung, wahlweise monatlich
   oder jährlich. Der Preis wird vor dem Kauf in der App und im App Store
   angezeigt.
@@ -41,7 +42,8 @@ User License Agreement (EULA)**:
 
 - Everdoc is free for up to 30 documents including scanning, reminders,
   backup and export. Everdoc Pro unlocks unlimited documents, the tax PDF
-  bundle and the cancellation-letter generator.
+  bundle, the cancellation-letter generator and custom reminder intervals
+  per document.
 - Everdoc Pro is an auto-renewing subscription, monthly or yearly. The price
   is shown in the app and on the App Store before you buy.
 - The subscription renews automatically unless cancelled at least 24 hours

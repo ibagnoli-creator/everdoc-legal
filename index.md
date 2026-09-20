@@ -1,6 +1,6 @@
 # Everdoc – Datenschutzerklärung / Privacy Policy
 
-*Stand / Last updated: August 2026*
+*Stand / Last updated: September 2026*
 
 ## Deutsch
 
