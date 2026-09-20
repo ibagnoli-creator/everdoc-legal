@@ -1,4 +1,4 @@
-# Everdoc – Datenschutzerklärung / Privacy Policy
+# Everydoc – Datenschutzerklärung / Privacy Policy
 
 *Stand / Last updated: September 2026*
 
@@ -8,14 +8,14 @@
 
 - Alle Dokumente, Fotos, Fristen und Einstellungen werden ausschliesslich
   lokal auf deinem Gerät gespeichert.
-- Everdoc betreibt keine Server, legt keine Konten an und erhebt keine
+- Everydoc betreibt keine Server, legt keine Konten an und erhebt keine
   Analyse- oder Nutzungsdaten.
 - Die Texterkennung (OCR) läuft vollständig auf dem Gerät.
 - Der App-PIN wird in der iOS-Keychain gespeichert und verlässt das Gerät
   nicht — auch nicht über Geräte-Backups.
 - Backups erstellst du selbst als ZIP-Datei; wohin du sie teilst,
   entscheidest allein du.
-- Bei einem Kauf von Everdoc Pro wickelt Apple die Zahlung ab. Everdoc
+- Bei einem Kauf von Everydoc Pro wickelt Apple die Zahlung ab. Everydoc
   erhält dabei keine persönlichen Daten; es gelten die
   Datenschutzbestimmungen von Apple.
 
@@ -33,14 +33,14 @@ Kontakt: i.bagnoli@hotmail.com
 
 - All documents, photos, deadlines and settings are stored exclusively on
   your device.
-- Everdoc operates no servers, creates no accounts and collects no
+- Everydoc operates no servers, creates no accounts and collects no
   analytics or usage data.
 - Text recognition (OCR) runs entirely on-device.
 - The app PIN is stored in the iOS keychain and never leaves the device,
   not even through device backups.
 - Backups are ZIP files you create yourself; where you share them is
   entirely your decision.
-- Purchases of Everdoc Pro are processed by Apple. Everdoc receives no
+- Purchases of Everydoc Pro are processed by Apple. Everydoc receives no
   personal data; Apple's privacy policy applies.
 
 Since no data is collected, there is nothing to access, rectify or erase —
